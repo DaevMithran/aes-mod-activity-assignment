@@ -20,6 +20,7 @@ use rand::Rng;
 
 ///We're using AES 128 which has 16-byte (128 bit) blocks.
 const BLOCK_SIZE: usize = 16;
+const NONCE: [u8; BLOCK_SIZE] = [112, 53, 181, 154, 26, 103, 126, 87, 9, 11, 161, 214, 46, 174, 200, 209];
 
 fn main() {
 	todo!("Maybe this should be a library crate. TBD");
@@ -115,10 +116,8 @@ fn un_pad(data: Vec<u8>) -> Vec<u8> {
 fn ecb_encrypt(plain_text: Vec<u8>, key: [u8; 16]) -> Vec<u8> {
 	let blocks = group(pad(plain_text));
 
-    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = Vec::new();
-    for (i, block) in blocks.iter().enumerate() {
-        ciphers[i] = aes_encrypt(*block, &key);
-    }
+    let ciphers:Vec<[u8; BLOCK_SIZE]> = blocks.iter().map(|block| aes_encrypt(*block, &key))
+        .collect();
 
     un_pad(un_group(ciphers))
 }
@@ -127,10 +126,7 @@ fn ecb_encrypt(plain_text: Vec<u8>, key: [u8; 16]) -> Vec<u8> {
 fn ecb_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
     let ciphers:Vec<[u8; BLOCK_SIZE]> = group(pad(cipher_text));
 
-    let mut blocks: Vec<[u8; 16]> = Vec::new();
-    for (i, cipher) in ciphers.iter().enumerate() {
-        blocks[i] = aes_decrypt(*cipher, &key);
-    }
+    let blocks: Vec<[u8; 16]> = ciphers.iter().map(|cipher| aes_decrypt(*cipher, &key)).collect();
 
     un_pad(un_group(blocks))
 }
@@ -149,10 +145,9 @@ fn ecb_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 /// is inserted as the first block of ciphertext.
 fn cbc_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 	// Remember to generate a random initialization vector for the first block.
-
 	let blocks = group(pad(plain_text));
 
-    let mut nonce:[u8; BLOCK_SIZE] = rand::random();
+    let mut nonce:[u8; BLOCK_SIZE] = NONCE;
     let mut ciphers:Vec<[u8; BLOCK_SIZE]> = Vec::new();
     for (i, block) in blocks.iter().enumerate() {
         ciphers[i] = aes_encrypt(xor_arrays(*block, nonce), &key);
@@ -175,9 +170,12 @@ fn xor_arrays(array1: [u8; BLOCK_SIZE], array2: [u8; BLOCK_SIZE]) -> [u8; BLOCK_
 fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
     let ciphers:Vec<[u8; BLOCK_SIZE]> = group(pad(cipher_text));
 
+    let mut nonce:[u8; BLOCK_SIZE] = NONCE;
     let mut blocks: Vec<[u8; 16]> = Vec::new();
     for (i, cipher) in ciphers.iter().enumerate() {
-        blocks[i] = aes_decrypt(*cipher, &key);
+        let block = aes_decrypt(*cipher, &key);
+        blocks[i] = xor_arrays(block, nonce);
+        nonce = *cipher
     }
 
     un_pad(un_group(blocks))
@@ -201,7 +199,7 @@ fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 /// inserted as the first block of the ciphertext.
 fn ctr_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 	// Remember to generate a random nonce
-	todo!()
+    todo!()
 }
 
 fn ctr_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
