@@ -20,7 +20,6 @@ use rand::Rng;
 
 ///We're using AES 128 which has 16-byte (128 bit) blocks.
 const BLOCK_SIZE: usize = 16;
-const NONCE: [u8; BLOCK_SIZE] = [112, 53, 181, 154, 26, 103, 126, 87, 9, 11, 161, 214, 46, 174, 200, 209];
 
 fn main() {
 	todo!("Maybe this should be a library crate. TBD");
@@ -102,8 +101,12 @@ fn un_group(blocks: Vec<[u8; BLOCK_SIZE]>) -> Vec<u8> {
 }
 
 /// Does the opposite of the pad function.
-fn un_pad(data: Vec<u8>) -> Vec<u8> {
-	todo!()
+fn un_pad(mut data: Vec<u8>) -> Vec<u8> {
+    let number_of_bytes_to_remove = data.pop().unwrap();
+    for _ in 0..number_of_bytes_to_remove-1{
+        data.pop();
+    }
+    data
 }
 
 /// The first mode we will implement is the Electronic Code Book, or ECB mode.
@@ -119,12 +122,12 @@ fn ecb_encrypt(plain_text: Vec<u8>, key: [u8; 16]) -> Vec<u8> {
     let ciphers:Vec<[u8; BLOCK_SIZE]> = blocks.iter().map(|block| aes_encrypt(*block, &key))
         .collect();
 
-    un_pad(un_group(ciphers))
+    un_group(ciphers)
 }
 
 /// Opposite of ecb_encrypt.
 fn ecb_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-    let ciphers:Vec<[u8; BLOCK_SIZE]> = group(pad(cipher_text));
+    let ciphers:Vec<[u8; BLOCK_SIZE]> = group(cipher_text);
 
     let blocks: Vec<[u8; 16]> = ciphers.iter().map(|cipher| aes_decrypt(*cipher, &key)).collect();
 
@@ -147,14 +150,16 @@ fn cbc_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 	// Remember to generate a random initialization vector for the first block.
 	let blocks = group(pad(plain_text));
 
-    let mut nonce:[u8; BLOCK_SIZE] = NONCE;
+    let mut nonce:[u8; BLOCK_SIZE] = rand::random();
     let mut ciphers:Vec<[u8; BLOCK_SIZE]> = Vec::new();
-    for (i, block) in blocks.iter().enumerate() {
-        ciphers[i] = aes_encrypt(xor_arrays(*block, nonce), &key);
+
+    ciphers.insert(0, nonce);
+    for i in 1..=blocks.len() {
+        ciphers[i] = aes_encrypt(xor_arrays(blocks[i], nonce), &key);
         nonce = ciphers[i];
     }
 
-    un_pad(un_group(ciphers))
+    un_group(ciphers)
 }
 
 fn xor_arrays(array1: [u8; BLOCK_SIZE], array2: [u8; BLOCK_SIZE]) -> [u8; BLOCK_SIZE] {
@@ -168,9 +173,9 @@ fn xor_arrays(array1: [u8; BLOCK_SIZE], array2: [u8; BLOCK_SIZE]) -> [u8; BLOCK_
 }
 
 fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-    let ciphers:Vec<[u8; BLOCK_SIZE]> = group(pad(cipher_text));
+    let ciphers:Vec<[u8; BLOCK_SIZE]> = group(cipher_text);
 
-    let mut nonce:[u8; BLOCK_SIZE] = NONCE;
+    let mut nonce:[u8; BLOCK_SIZE] = rand::random();
     let mut blocks: Vec<[u8; 16]> = Vec::new();
     for (i, cipher) in ciphers.iter().enumerate() {
         let block = aes_decrypt(*cipher, &key);
@@ -199,7 +204,45 @@ fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 /// inserted as the first block of the ciphertext.
 fn ctr_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 	// Remember to generate a random nonce
-    todo!()
+
+	let blocks = group(pad(plain_text));
+
+    let nonce:[u8; BLOCK_SIZE/2] = rand::random();
+    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = Vec::new();
+    let mut counter: [u8; 8] = [0; 8];
+    for (i, block) in blocks.iter().enumerate() {
+        ciphers[i] = aes_encrypt(xor_arrays(*block, concat_arrays(nonce, counter)), &key);
+        increment_counter(&mut counter)
+    }
+
+    un_group(ciphers)
+}
+
+fn increment_counter(counter: &mut [u8; 8]) {
+    for i in (0..8).rev() {
+        if counter[i] == u8::MAX {
+            counter[i] = 0;
+        } else {
+            counter[i] += 1;
+            break;
+        }
+    }
+}
+
+fn concat_arrays(arr1: [u8; BLOCK_SIZE/2], arr2: [u8; BLOCK_SIZE/2]) -> [u8; 16] {
+    let mut result = [0u8; BLOCK_SIZE]; // Create an array to hold the result
+    
+    // Copy elements from the first array
+    for i in 0..BLOCK_SIZE/2 {
+        result[i] = arr1[i];
+    }
+    
+    // Copy elements from the second array
+    for i in 0..BLOCK_SIZE/2 {
+        result[i + 8] = arr2[i];
+    }
+    
+    result
 }
 
 fn ctr_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
