@@ -212,13 +212,22 @@ fn ctr_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 	let blocks = group(pad(plain_text));
 
     let nonce:[u8; BLOCK_SIZE/2] = rand::random();
-    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = Vec::new();
     let mut counter: [u8; 8] = [0; 8];
-    for (i, block) in blocks.iter().enumerate() {
-        ciphers[i] = aes_encrypt(xor_arrays(*block, concat_arrays(nonce, counter)), &key);
-        increment_counter(&mut counter)
-    }
-
+    let ciphers:Vec<[u8; BLOCK_SIZE]> = blocks
+                                            .iter()
+                                            .map(|block| {
+                                                let cipher = 
+                                                    xor_arrays( // xor block with encrypted V
+                                                        *block, 
+                                                        aes_encrypt( // encrypt V
+                                                      concat_arrays(nonce, counter),
+                                                            &key
+                                                        )
+                                                    );
+                                                increment_counter(&mut counter);
+                                                cipher
+                                            })
+                                            .collect(); 
     un_group(ciphers)
 }
 
@@ -250,5 +259,19 @@ fn concat_arrays(arr1: [u8; BLOCK_SIZE/2], arr2: [u8; BLOCK_SIZE/2]) -> [u8; 16]
 }
 
 fn ctr_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-	todo!()
+    let ciphers:Vec<[u8; BLOCK_SIZE]> = group(cipher_text);
+
+    // retreive nonce
+    let mut nonce:[u8; BLOCK_SIZE] = ciphers[0];
+    let mut blocks: Vec<[u8; 16]> = Vec::new();
+
+    for i in 1..=blocks.len() {
+        let block = aes_decrypt(blocks[i], &key);
+        blocks[i] = xor_arrays(block, nonce);
+        nonce = blocks[i]
+    }
+
+    // remove the
+    blocks.remove(0);
+    un_pad(un_group(blocks))
 }
