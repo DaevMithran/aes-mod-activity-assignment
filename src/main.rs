@@ -175,14 +175,18 @@ fn xor_arrays(array1: [u8; BLOCK_SIZE], array2: [u8; BLOCK_SIZE]) -> [u8; BLOCK_
 fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
     let ciphers:Vec<[u8; BLOCK_SIZE]> = group(cipher_text);
 
-    let mut nonce:[u8; BLOCK_SIZE] = rand::random();
+    // retreive nonce
+    let mut nonce:[u8; BLOCK_SIZE] = ciphers[0];
     let mut blocks: Vec<[u8; 16]> = Vec::new();
-    for (i, cipher) in ciphers.iter().enumerate() {
-        let block = aes_decrypt(*cipher, &key);
+
+    for i in 1..=blocks.len() {
+        let block = aes_decrypt(blocks[i], &key);
         blocks[i] = xor_arrays(block, nonce);
-        nonce = *cipher
+        nonce = blocks[i]
     }
 
+    // remove the
+    blocks.remove(0);
     un_pad(un_group(blocks))
 }
 
