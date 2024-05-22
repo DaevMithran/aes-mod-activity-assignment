@@ -151,9 +151,8 @@ fn cbc_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 	let blocks = group(pad(plain_text));
 
     let mut nonce:[u8; BLOCK_SIZE] = rand::random();
-    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = Vec::new();
+    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = vec![nonce]; // inserts the IV in the first block
 
-    ciphers.insert(0, nonce);
     for i in 1..=blocks.len() {
         ciphers[i] = aes_encrypt(xor_arrays(blocks[i], nonce), &key);
         nonce = ciphers[i];
@@ -173,16 +172,22 @@ fn xor_arrays(array1: [u8; BLOCK_SIZE], array2: [u8; BLOCK_SIZE]) -> [u8; BLOCK_
 }
 
 fn cbc_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-    let ciphers:Vec<[u8; BLOCK_SIZE]> = group(cipher_text);
+    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = group(cipher_text);
 
-    let mut nonce:[u8; BLOCK_SIZE] = rand::random();
+    // retreive nonce and remove it
+    let mut nonce:[u8; BLOCK_SIZE] = ciphers[0];
+    ciphers.remove(0);
+
     let mut blocks: Vec<[u8; 16]> = Vec::new();
-    for (i, cipher) in ciphers.iter().enumerate() {
-        let block = aes_decrypt(*cipher, &key);
+
+    for i in 0..ciphers.len() {
+        let block = aes_decrypt(ciphers[i], &key);
         blocks[i] = xor_arrays(block, nonce);
-        nonce = *cipher
+        nonce = blocks[i]
     }
 
+    // remove the
+    blocks.remove(0);
     un_pad(un_group(blocks))
 }
 
@@ -207,12 +212,21 @@ fn ctr_encrypt(plain_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
 
 	let blocks = group(pad(plain_text));
 
-    let nonce:[u8; BLOCK_SIZE/2] = rand::random();
-    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = Vec::new();
+    let nonce:[u8; BLOCK_SIZE] = rand::random();
     let mut counter: [u8; 8] = [0; 8];
-    for (i, block) in blocks.iter().enumerate() {
-        ciphers[i] = aes_encrypt(xor_arrays(*block, concat_arrays(nonce, counter)), &key);
-        increment_counter(&mut counter)
+
+    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = vec![nonce]; // adding 128 bit nonce in the front
+    for i in 1..=blocks.len() {
+        let encypted_v = aes_encrypt( // encrypt V
+            concat_arrays(nonce, counter),
+                  &key
+              );
+
+        ciphers[i] = xor_arrays( // xor block with encrypted V
+            blocks[i], 
+            encypted_v
+        );
+        increment_counter(&mut counter);
     }
 
     un_group(ciphers)
@@ -229,15 +243,15 @@ fn increment_counter(counter: &mut [u8; 8]) {
     }
 }
 
-fn concat_arrays(arr1: [u8; BLOCK_SIZE/2], arr2: [u8; BLOCK_SIZE/2]) -> [u8; 16] {
+fn concat_arrays(arr1: [u8; BLOCK_SIZE], arr2: [u8; BLOCK_SIZE/2]) -> [u8; 16] {
     let mut result = [0u8; BLOCK_SIZE]; // Create an array to hold the result
     
-    // Copy elements from the first array
+    // make sure to use only first 64 bits in nonce
     for i in 0..BLOCK_SIZE/2 {
         result[i] = arr1[i];
     }
     
-    // Copy elements from the second array
+    // Copy elements from counter
     for i in 0..BLOCK_SIZE/2 {
         result[i + 8] = arr2[i];
     }
@@ -246,5 +260,21 @@ fn concat_arrays(arr1: [u8; BLOCK_SIZE/2], arr2: [u8; BLOCK_SIZE/2]) -> [u8; 16]
 }
 
 fn ctr_decrypt(cipher_text: Vec<u8>, key: [u8; BLOCK_SIZE]) -> Vec<u8> {
-	todo!()
+    let mut ciphers:Vec<[u8; BLOCK_SIZE]> = group(cipher_text);
+
+    // retreive nonce
+    let nonce:[u8; BLOCK_SIZE] = ciphers[0];
+    ciphers.remove(0);
+
+    let mut counter: [u8; 8] = [0; 8];
+    let mut blocks: Vec<[u8; 16]> = Vec::new();
+
+    for i in 0..ciphers.len() {
+        // decrypt v
+        let v: [u8; 16] = aes_decrypt(concat_arrays(nonce, counter), &key);
+        blocks[i] = xor_arrays(ciphers[i], v);
+        increment_counter(&mut counter)
+    }
+
+    un_pad(un_group(blocks))
 }
